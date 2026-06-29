@@ -1,0 +1,15 @@
+{
+  "name": "collab-server",
+  "version": "1.0.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "yjs": "^13",
+    "y-protocols": "^1.0.7",
+    "lib0": "^0.2",
+    "ws": "^8"
+  }
+}
