@@ -33,8 +33,8 @@ There is no database. Each room lives only as long as someone is connected (see 
 
 | File | Responsibility |
 |------|----------------|
-| `index.html` | Lobby (create/join room), top bar (room code, copy-invite, presence, run controls), editor column with HTML/CSS/JS tabs, and the preview iframe. |
-| `script.js` | All logic (ES module): rooms, Yjs wiring, the textarea↔CRDT bridge, the iframe sketch runner, presence. |
+| `index.html` | Lobby (create/join room), top bar (room code, copy-invite, editable name, presence, cursor toggle, run controls), editor column with HTML/CSS/JS tabs, and the preview iframe. |
+| `script.js` | All logic (ES module): rooms, Yjs wiring, the textarea↔CRDT bridge, the iframe sketch runner, presence, editable display name, and collaborator cursors. |
 | `style.css` | Dark theme. |
 | `Dockerfile` | Copies the three site files into `public/` for Disco's static build. |
 | `disco.json` | Declares a `generator` service serving `public/`. |

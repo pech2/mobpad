@@ -56,6 +56,8 @@ const ADJ = ['coral','amber','mossy','lunar','brisk','vivid','quiet','sunny','te
 const NOUN = ['otter','comet','maple','raven','pixel','delta','fern','koi','ember','wave','finch','dune']
 const pick = (a) => a[Math.floor(Math.random() * a.length)]
 const makeCode = () => `${pick(ADJ)}-${pick(NOUN)}-${Math.floor(Math.random() * 900 + 100)}`
+const esc = (s) => (s || '').replace(/[&<>"]/g, (c) => (
+  { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]))
 
 // ---------- lobby actions ----------
 const enter = (room) => {
@@ -138,6 +140,8 @@ ${js}
     const { start, del, ins } = diff(t.toString(), editor.value)
     ydoc.transact(() => { if (del) t.delete(start, del); if (ins) t.insert(start, ins) }, LOCAL)
     scheduleRun()
+    postCursor()
+    renderCursors()
   })
 
   // one observer per file: the active file drives the textarea; all files drive the preview
@@ -149,6 +153,7 @@ ${js}
         editor.setSelectionRange(transform(a, e.delta), transform(b, e.delta))
       }
       scheduleRun()
+      renderCursors()
     })
   })
 
@@ -170,21 +175,91 @@ ${js}
     editor.value = texts[f].toString()
     editor.setSelectionRange(0, 0)
     editor.focus()
+    postCursor()
+    renderCursors()
   }
   tabEls.forEach((b) => b.addEventListener('click', () => setActive(b.dataset.file)))
 
-  // ---------- presence ----------
+  // ---------- presence + editable display name ----------
   const palette = ['#ff8fa3', '#8fd3ff', '#b5f08f', '#ffd28f', '#c8a3ff', '#7df0d0']
-  provider.awareness.setLocalStateField('user', {
-    name: 'coder-' + Math.floor(Math.random() * 900 + 100),
-    color: pick(palette)
+  const myColor = pick(palette)
+  const nameInput = $('nameInput')
+  const NAME_KEY = 'mobpad:name'
+  const fallbackName = 'coder-' + Math.floor(Math.random() * 900 + 100)
+  nameInput.value = localStorage.getItem(NAME_KEY) || fallbackName
+  const publishName = () => {
+    const name = nameInput.value.trim().slice(0, 24) || fallbackName
+    provider.awareness.setLocalStateField('user', { name, color: myColor })
+  }
+  nameInput.addEventListener('input', () => {
+    localStorage.setItem(NAME_KEY, nameInput.value.trim().slice(0, 24))
+    publishName()
   })
+  publishName()
+
   const renderPresence = () => {
-    const users = [...provider.awareness.getStates().values()].map(s => s.user).filter(Boolean)
-    presenceEl.innerHTML = users.map(u => `<span class="chip" style="--c:${u.color}">${u.name}</span>`).join('')
-    countEl.textContent = users.length + (users.length === 1 ? ' coder' : ' coders')
+    const chips = []
+    provider.awareness.getStates().forEach((s, id) => {
+      if (!s.user) return
+      const me = id === provider.awareness.clientID
+      chips.push(`<span class="chip" style="--c:${s.user.color}">${esc(s.user.name)}${me ? ' (you)' : ''}</span>`)
+    })
+    presenceEl.innerHTML = chips.join('')
+    countEl.textContent = chips.length + (chips.length === 1 ? ' coder' : ' coders')
   }
   provider.awareness.on('change', renderPresence)
+
+  // ---------- collaborator cursors (toggle in the top bar) ----------
+  // Broadcast our caret through awareness; draw everyone else's over the textarea.
+  // A hidden "mirror" div reproduces the textarea's wrapping to map a char index → x/y.
+  const cursorLayer = $('cursorLayer'), cursorsChk = $('cursors')
+  const mirror = document.createElement('div')
+  mirror.className = 'caret-mirror'
+  cursorLayer.appendChild(mirror)
+  const MIRROR_PROPS = ['paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft',
+    'fontFamily', 'fontSize', 'fontWeight', 'fontStyle', 'fontVariant',
+    'letterSpacing', 'wordSpacing', 'lineHeight', 'textTransform', 'textIndent', 'tabSize']
+  const caretXY = (pos) => {
+    const cs = getComputedStyle(editor)
+    MIRROR_PROPS.forEach((p) => { mirror.style[p] = cs[p] })
+    mirror.style.width = editor.clientWidth + 'px'
+    mirror.textContent = editor.value.slice(0, pos)
+    const marker = document.createElement('span')
+    marker.textContent = editor.value.slice(pos) || '.'
+    mirror.appendChild(marker)
+    const x = marker.offsetLeft - editor.scrollLeft
+    const y = marker.offsetTop - editor.scrollTop
+    mirror.textContent = ''
+    return { x, y, h: parseFloat(cs.lineHeight) || 18 }
+  }
+  const postCursor = () =>
+    provider.awareness.setLocalStateField('cursor', { file: active, pos: editor.selectionEnd })
+  let cursorRaf = 0
+  const renderCursors = () => {
+    if (cursorRaf) return
+    cursorRaf = requestAnimationFrame(() => {
+      cursorRaf = 0
+      cursorLayer.querySelectorAll('.cursor').forEach((n) => n.remove())
+      if (!cursorsChk.checked) return
+      provider.awareness.getStates().forEach((state, id) => {
+        if (id === provider.awareness.clientID) return
+        const c = state.cursor, u = state.user
+        if (!c || !u || c.file !== active) return
+        const { x, y, h } = caretXY(Math.min(c.pos, editor.value.length))
+        const el = document.createElement('div')
+        el.className = 'cursor'
+        el.style.cssText = `transform:translate(${x}px,${y}px);height:${h}px;--c:${u.color}`
+        el.innerHTML = `<span class="cursor-flag">${esc(u.name)}</span>`
+        cursorLayer.appendChild(el)
+      })
+    })
+  }
+  document.addEventListener('selectionchange', () => { if (document.activeElement === editor) postCursor() })
+  editor.addEventListener('focus', postCursor)
+  editor.addEventListener('scroll', renderCursors)
+  window.addEventListener('resize', renderCursors)
+  cursorsChk.addEventListener('change', renderCursors)
+  provider.awareness.on('change', renderCursors)
 
   // ---------- seed all three panes once per room ----------
   let seeded = false
@@ -205,6 +280,7 @@ ${js}
 
   editor.value = texts[active].toString()
   renderPresence()
+  renderCursors()
   run()
 }
 
