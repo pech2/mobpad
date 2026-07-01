@@ -4,7 +4,7 @@ import { WebSocket } from 'ws'
 import { spawn } from 'child_process'
 
 const wait = (ms) => new Promise(r => setTimeout(r, ms))
-const URL = 'ws://localhost:1234'
+const URL = 'ws://localhost:42420'
 const ROOM = 'testroom'
 
 const srv = spawn('node', ['server.js'], { stdio: 'inherit' })

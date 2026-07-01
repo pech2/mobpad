@@ -8,5 +8,5 @@ RUN npm install --omit=dev
 COPY . /code/.
 
 # must match the port in disco.json and the PORT env default in server.js
-EXPOSE 1234
+EXPOSE 42420
 CMD ["node", "server.js"]

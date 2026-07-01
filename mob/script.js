@@ -4,13 +4,13 @@ import { WebsocketProvider } from 'https://esm.sh/y-websocket@3?deps=yjs@13'
 // import { WebrtcProvider } from 'https://esm.sh/y-webrtc@10?deps=yjs@13'
 
 // Where the Yjs sync server lives. Auto-detected from how the page is served:
-//   • http  page (localhost / LAN IP / Tailscale) → ws://<same-host>:1234  (local dev)
+//   • http  page (localhost / LAN IP / Tailscale) → ws://<same-host>:42420  (local dev)
 //   • https page (Disco+Caddy, Cloudflare Tunnel, …) → the wss:// domain below
 // Only PROD_SERVER needs editing once collab-server is deployed.
 const PROD_SERVER = 'wss://collab.yourdomain.com'   // <-- your deployed collab-server domain
 const SERVER = location.protocol === 'https:'
   ? PROD_SERVER
-  : `ws://${location.hostname}:1234`
+  : `ws://${location.hostname}:42420`
 const APP_PREFIX = 'mob:'                        // server-side namespace
 
 const FILES = ['html', 'css', 'js']

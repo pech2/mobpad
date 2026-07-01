@@ -2,7 +2,7 @@
   "version": "1.0",
   "services": {
     "web": {
-      "port": 1234
+      "port": 42420
     }
   }
 }

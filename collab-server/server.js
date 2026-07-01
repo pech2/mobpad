@@ -6,7 +6,7 @@ import * as decoding from 'lib0/decoding'
 import { WebSocketServer } from 'ws'
 import http from 'http'
 
-const PORT = Number(process.env.PORT) || 1234
+const PORT = Number(process.env.PORT) || 42420
 const HOST = process.env.HOST || '0.0.0.0'
 const PING_TIMEOUT = 30000
 
