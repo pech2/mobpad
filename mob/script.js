@@ -11,7 +11,7 @@ const PROD_SERVER = 'wss://collab.yourdomain.com'   // <-- your deployed collab-
 const SERVER = location.protocol === 'https:'
   ? PROD_SERVER
   : `ws://${location.hostname}:1234`
-const APP_PREFIX = 'noc-mob:'                   // server-side namespace
+const APP_PREFIX = 'mob:'                        // server-side namespace
 
 const FILES = ['html', 'css', 'js']
 const STARTERS = {
@@ -19,24 +19,24 @@ const STARTERS = {
      Put DOM elements, buttons, or sliders your sketch needs here. -->`,
   css: `/* CSS — style the page or the canvas here.
    (The canvas fills the preview by default.) */`,
-  js: `// Nature of Code — Ch.1: a Mover with a velocity vector.
-// Edit together; the sketch re-runs as you type. ⌘/Ctrl+Enter to force-run.
-let pos, vel;
+  js: `// mobpad — code together; the sketch re-runs as you type.
+// Move your mouse over the canvas. ⌘/Ctrl+Enter to force-run.
+let trail = [];
 
 function setup() {
   createCanvas(windowWidth, windowHeight);
-  pos = createVector(width / 2, height / 2);
-  vel = createVector(random(-4, 4), random(-4, 4));
+  colorMode(HSB, 360, 100, 100, 1);
   noStroke();
 }
 
 function draw() {
-  background(15, 15, 25, 35);
-  pos.add(vel);
-  if (pos.x < 12 || pos.x > width - 12)  vel.x *= -1;
-  if (pos.y < 12 || pos.y > height - 12) vel.y *= -1;
-  fill(150, 210, 255);
-  circle(pos.x, pos.y, 24);
+  background(240, 30, 8, 0.15);
+  trail.push({ x: mouseX, y: mouseY });
+  if (trail.length > 40) trail.shift();
+  trail.forEach((p, i) => {
+    fill((frameCount + i * 6) % 360, 70, 100);
+    circle(p.x, p.y, i * 0.9);
+  });
 }
 
 function windowResized() { resizeCanvas(windowWidth, windowHeight); }`

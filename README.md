@@ -1,6 +1,6 @@
-# p5 mob · Nature of Code
+# mobpad
 
-A real-time **collaborative p5.js editor for mob programming**. Several people join a room, edit one shared sketch together across HTML / CSS / JS panes, and watch it run live — built for working through *The Nature of Code* as a group.
+A real-time **collaborative code pad for mob programming**. Several people join a room, edit one shared sketch together across HTML / CSS / JS panes, and watch it run live. p5.js is auto-injected so it works well for creative-coding sessions (e.g. *The Nature of Code*), but nothing is p5-specific — it's a generic collaborative HTML/CSS/JS pad.
 
 Concurrent edits merge with CRDTs (no last-write-wins overwrites when two people type at once), every change re-runs the sketch in a sandboxed preview, and presence shows who's in the room.
 
@@ -12,7 +12,7 @@ The project is **two independently deployed pieces**, kept in two repos:
 
 | Piece | Repo | Role |
 |-------|------|------|
-| Frontend | `p5-mob/` | Static site: editor UI, preview iframe, room lobby. No backend of its own. |
+| Frontend | `mob/` | Static site: editor UI, preview iframe, room lobby. No backend of its own. |
 | Sync server | `collab-server/` | Small Node WebSocket server relaying Yjs updates between clients. |
 
 Each browser holds the authoritative document as a [Yjs](https://docs.yjs.dev) CRDT and syncs through the server. The server keeps an in-memory copy per room so late joiners receive full history. The preview is a sandboxed `<iframe>` rebuilt on each change, with p5.js auto-injected.
@@ -29,7 +29,7 @@ There is no database. Each room lives only as long as someone is connected (see 
 
 ## Repo layout
 
-### `p5-mob/` — frontend (static)
+### `mob/` — frontend (static)
 
 | File | Responsibility |
 |------|----------------|
@@ -75,7 +75,7 @@ node server.js          # listens on 0.0.0.0:1234
 # optional: node test.mjs   # should print all PASS
 ```
 
-**2. Frontend** — in `p5-mob/`, point the client at the local server, then serve over http:
+**2. Frontend** — in `mob/`, point the client at the local server, then serve over http:
 
 ```bash
 python3 -m http.server 8000     # or: npx http-server -p 8000
@@ -108,8 +108,8 @@ const SERVER = isLocal ? `ws://${location.hostname}:1234`
 Two Disco projects on one server. Order matters — the frontend needs the server's address.
 
 1. **Deploy `collab-server` first.** Push to a repo, add it as a Disco project, give it a domain (e.g. `collab.yourdomain.com`). Disco builds the Dockerfile and Caddy fronts it with automatic TLS, so it comes up as `wss://collab.yourdomain.com`.
-2. **Set `SERVER`** in `p5-mob/script.js` to that `wss://` URL (or use the auto-detect snippet above).
-3. **Deploy `p5-mob` second.** Push to a second repo, add it as a Disco project with its own domain (e.g. `mob.yourdomain.com`). The `generator` service serves the static files over https.
+2. **Set `SERVER`** in `mob/script.js` to that `wss://` URL (or use the auto-detect snippet above).
+3. **Deploy `mob` second.** Push to a second repo, add it as a Disco project with its own domain (e.g. `mob.yourdomain.com`). The `generator` service serves the static files over https.
 
 Then open `https://mob.yourdomain.com`, create a room, and share the invite link. Both sides are now real `https`/`wss` origins, which the browser requires for a secure page.
 
@@ -122,7 +122,7 @@ Then open `https://mob.yourdomain.com`, create a room, and share the invite link
 | Setting | Where | Notes |
 |---------|-------|-------|
 | `SERVER` | `script.js` | The sync server URL. `ws://` locally, `wss://` in production. |
-| `APP_PREFIX` | `script.js` | Server-side room namespace (`noc-mob:`). Prevents room-name collisions if other apps share the same server. |
+| `APP_PREFIX` | `script.js` | Server-side room namespace (`mob:`). Prevents room-name collisions if other apps share the same server. |
 | `PORT` / `HOST` | `server.js` env | Default `1234` / `0.0.0.0`. |
 | Room code | URL hash | `#room=coral-otter-318`. Sanitized and used as both the share key and the server room path. |
 
@@ -136,7 +136,7 @@ Non-obvious invariants worth preserving:
 - **Cursor transform.** Remote edits map the local caret through the Yjs delta (`transform()`) so your cursor doesn't jump when a teammate edits text above you.
 - **One Y.Text per pane.** `html`, `css`, `js` are separate `Y.Text`s in one `Y.Doc`. The *active* pane drives the textarea; *all three* trigger a preview re-run, so editing CSS updates the canvas even while someone else is in the JS tab.
 - **Preview isolation.** The sketch runs in a sandboxed iframe rebuilt via `srcdoc` on each change. User code in each pane is escaped against its own closing tag (`</script>`, `</style>`) so it can't break out of the composed document.
-- **p5 is pinned to `p5@1`** (jsDelivr). p5 2.0 has breaking changes; Nature of Code targets 1.x.
+- **p5 is pinned to `p5@1`** (jsDelivr). p5 2.0 has breaking changes; the starter sketch and most tutorials (e.g. Nature of Code) target 1.x.
 - **Seeding.** The first client into an empty room seeds the three starter panes once; everyone else syncs to the existing doc. Guard with the emptiness check before adding more seed logic.
 
 ---
