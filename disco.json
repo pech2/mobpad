@@ -1,0 +1,11 @@
+{
+  "version": "1.0",
+  "services": {
+    "web":    { "image": "web", "port": 80 },
+    "collab": { "image": "collab", "port": 42420 }
+  },
+  "images": {
+    "web":    { "dockerfile": "mob/Dockerfile.nginx", "context": "." },
+    "collab": { "dockerfile": "collab-server/Dockerfile", "context": "collab-server" }
+  }
+}

@@ -3,14 +3,16 @@ import { WebsocketProvider } from 'https://esm.sh/y-websocket@3?deps=yjs@13'
 // Fallback (no server, open 2 tabs): uncomment this and the provider line inside start().
 // import { WebrtcProvider } from 'https://esm.sh/y-webrtc@10?deps=yjs@13'
 
-// Where the Yjs sync server lives. Auto-detected from how the page is served:
-//   • http  page (localhost / LAN IP / Tailscale) → ws://<same-host>:42420  (local dev)
-//   • https page (Disco+Caddy, Cloudflare Tunnel, …) → the wss:// domain below
-// Only PROD_SERVER needs editing once collab-server is deployed.
-const PROD_SERVER = 'wss://collab.yourdomain.com'   // <-- your deployed collab-server domain
-const SERVER = location.protocol === 'https:'
-  ? PROD_SERVER
-  : `ws://${location.hostname}:42420`
+// Single-origin deployment: the sync server lives behind the SAME host as this
+// page, reverse-proxied at /collab (see mob/nginx.conf). The session cookie is
+// carried automatically on the same-origin ws upgrade — no token in the URL.
+//   • https page (Disco+Caddy)      → wss://<same-host>/collab
+//   • local dev (localhost/127...)  → ws://<host>:42420 direct to the node server
+//                                      (run it with AUTH_DEV=1; see README)
+const isLocal = ['localhost', '127.0.0.1'].includes(location.hostname)
+const SERVER = isLocal
+  ? `ws://${location.hostname}:42420`
+  : `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/collab`
 const APP_PREFIX = 'mob:'                        // server-side namespace
 
 const FILES = ['html', 'css', 'js']
@@ -87,6 +89,15 @@ function start(room) {
   const provider = new WebsocketProvider(SERVER, APP_PREFIX + room, ydoc)
   // Fallback instead of the line above:
   // const provider = new WebrtcProvider(APP_PREFIX + room, ydoc)
+
+  // The ws gate closes unauthenticated sockets with code 4401. Reloading re-runs
+  // the auth gate above, which now sees a 401 and shows the login screen.
+  provider.on('connection-close', (event) => {
+    if (event && event.code === 4401) {
+      provider.disconnect()
+      location.reload()
+    }
+  })
 
   const editor = $('editor'), stage = $('stage')
   const presenceEl = $('presence'), countEl = $('count'), autoChk = $('auto')
@@ -186,7 +197,9 @@ ${js}
   const nameInput = $('nameInput')
   const NAME_KEY = 'mobpad:name'
   const fallbackName = 'coder-' + Math.floor(Math.random() * 900 + 100)
-  nameInput.value = localStorage.getItem(NAME_KEY) || fallbackName
+  // Seed from the trusted Recurse profile name when we have one; otherwise the
+  // remembered local name, then a random fallback.
+  nameInput.value = (me && me.name) || localStorage.getItem(NAME_KEY) || fallbackName
   const publishName = () => {
     const name = nameInput.value.trim().slice(0, 24) || fallbackName
     provider.awareness.setLocalStateField('user', { name, color: myColor })
@@ -284,6 +297,33 @@ ${js}
   run()
 }
 
-// ---------- boot ----------
-const initial = readRoom()
-if (initial) { lobby.style.display = 'none'; start(initial) }
+// ---------- auth gate ----------
+// Prod requires a Recurse Center session (an HttpOnly cookie set by /auth/callback).
+// Local dev connects straight to the node server (run with AUTH_DEV=1), so we skip
+// the gate there and treat the user as signed in.
+let me = null
+async function requireAuth() {
+  if (isLocal) return { id: 'local', name: null }
+  try {
+    const r = await fetch('/auth/me', { credentials: 'same-origin' })
+    if (r.ok) return await r.json()
+  } catch {}
+  return null
+}
+
+function boot() {
+  const initial = readRoom()
+  if (initial) { lobby.style.display = 'none'; start(initial) }
+}
+
+;(async () => {
+  me = await requireAuth()
+  if (!me) {
+    $('authgate').style.display = ''
+    $('login').onclick = () => {
+      location.href = '/auth/login?redirect=' + encodeURIComponent(location.href)
+    }
+    return
+  }
+  boot()
+})()

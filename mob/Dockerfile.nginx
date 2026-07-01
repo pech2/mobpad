@@ -1,0 +1,10 @@
+# Single-origin `web` service: serves the static frontend AND reverse-proxies
+# /auth/* and the /collab ws to the internal `collab` node service (nginx.conf).
+# Build context is the repo root (see disco.json) so it can reach mob/.
+#
+# We copy the three site files explicitly (not the whole mob/ dir) so nginx.conf,
+# the Dockerfiles, and disco.json are never served as static assets.
+FROM nginx:alpine
+COPY mob/index.html mob/style.css mob/script.js /usr/share/nginx/html/
+COPY mob/nginx.conf /etc/nginx/conf.d/default.conf
+EXPOSE 80
