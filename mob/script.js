@@ -1,18 +1,42 @@
-import * as Y from 'https://esm.sh/yjs@13'
-import { WebsocketProvider } from 'https://esm.sh/y-websocket@3?deps=yjs@13'
+import * as Y from 'https://esm.sh/yjs@13.6.31'
+import { WebsocketProvider } from 'https://esm.sh/y-websocket@3'
 // Fallback (no server, open 2 tabs): uncomment this and the provider line inside start().
-// import { WebrtcProvider } from 'https://esm.sh/y-webrtc@10?deps=yjs@13'
+// import { WebrtcProvider } from 'https://esm.sh/y-webrtc@10'
+
+// CodeMirror 6 + its official Yjs binding (y-codemirror.next), loaded from a CDN
+// so we keep the "no node_modules, no build step" deploy.
+//
+// @codemirror/state, @codemirror/view and yjs MUST each resolve to ONE module
+// instance across every package, or CodeMirror throws "multiple instances of
+// @codemirror/state" and yCollab silently fails to observe our Y.Text. We rely
+// on esm.sh deduping by canonical URL: leaving the versions to resolve naturally
+// makes every package share the same deep module. (Do NOT add ?deps= here — that
+// forces variant builds on hashed paths that no longer match those canonical
+// URLs, which reintroduces the duplicate-instance bug.)
+import { EditorView, keymap } from 'https://esm.sh/@codemirror/view@6.43.4'
+import { EditorState, Prec } from 'https://esm.sh/@codemirror/state@6.7.0'
+import { basicSetup } from 'https://esm.sh/codemirror@6.0.2'
+import { indentUnit } from 'https://esm.sh/@codemirror/language@6'
+import { indentWithTab } from 'https://esm.sh/@codemirror/commands@6'
+import { javascript } from 'https://esm.sh/@codemirror/lang-javascript@6'
+import { html as htmlLang } from 'https://esm.sh/@codemirror/lang-html@6'
+import { css as cssLang } from 'https://esm.sh/@codemirror/lang-css@6'
+import { oneDark } from 'https://esm.sh/@codemirror/theme-one-dark@6'
+import { yCollab } from 'https://esm.sh/y-codemirror.next@0.3'
 
 // Single-origin deployment: the sync server lives behind the SAME host as this
 // page, reverse-proxied at /collab (see mob/nginx.conf). The session cookie is
 // carried automatically on the same-origin ws upgrade — no token in the URL.
-//   • https page (Disco+Caddy)      → wss://<same-host>/collab
-//   • local dev (localhost/127...)  → ws://<host>:42420 direct to the node server
-//                                      (run it with AUTH_DEV=1; see README)
-const isLocal = ['localhost', '127.0.0.1'].includes(location.hostname)
-const SERVER = isLocal
+//   • https page (Disco+Caddy)  → wss://<same-host>/collab
+//   • http page (local / LAN)   → ws://<host>:42420 direct to the node server
+//                                 (run it with AUTH_DEV=1; see README)
+// Keyed on protocol, not hostname: deployment is always https behind Caddy, so
+// any plain-http page (localhost, 127.0.0.1, or a LAN IP on another device) is
+// dev and talks straight to the node server on 42420 with no manual editing.
+const isDev = location.protocol !== 'https:'
+const SERVER = isDev
   ? `ws://${location.hostname}:42420`
-  : `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/collab`
+  : `wss://${location.host}/collab`
 const APP_PREFIX = 'mob:'                        // server-side namespace
 
 const FILES = ['html', 'css', 'js']
@@ -102,7 +126,7 @@ function start(room) {
     }
   })
 
-  const editor = $('editor'), stage = $('stage')
+  const host = $('editorHost'), stage = $('stage')
   const presenceEl = $('presence'), countEl = $('count'), autoChk = $('auto')
   const LOCAL = {}
 
@@ -131,53 +155,51 @@ ${js}
   let timer
   const scheduleRun = () => { if (!autoChk.checked) return; clearTimeout(timer); timer = setTimeout(run, 600) }
 
-  // ---------- textarea <-> active Yjs text, with concurrent-edit cursor handling ----------
-  const diff = (a, b) => {
-    let s = 0
-    while (s < a.length && s < b.length && a[s] === b[s]) s++
-    let ae = a.length, be = b.length
-    while (ae > s && be > s && a[ae - 1] === b[be - 1]) { ae--; be-- }
-    return { start: s, del: ae - s, ins: b.slice(s, be) }
-  }
-  const transform = (idx, delta) => {
-    let oldPos = 0
-    for (const op of delta) {
-      if (op.retain != null) oldPos += op.retain
-      else if (op.insert != null) { if (oldPos <= idx) idx += op.insert.length }
-      else if (op.delete != null) { if (oldPos < idx) idx -= Math.min(op.delete, idx - oldPos); oldPos += op.delete }
-    }
-    return idx
-  }
+  // ---------- CodeMirror editors: one view per file, each bound to its Y.Text ----------
+  // yCollab drives CRDT sync AND remote-cursor rendering, replacing the old
+  // hand-rolled diff/observe bridge and the caret "mirror". Because a remote
+  // caret is a Y.RelativePosition scoped to one Y.Text, a peer viewing HTML
+  // never renders a caret from the JS text — so cursors stay per-file, as before.
+  const LANG = { html: htmlLang(), css: cssLang(), js: javascript() }
+  // App chrome over oneDark's token colors: keep the room's #12121b palette.
+  const appTheme = EditorView.theme({
+    '&': { height: '100%', backgroundColor: '#12121b', color: '#d7e7ff' },
+    '&.cm-focused': { outline: 'none' },
+    '.cm-scroller': { fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace', fontSize: '13px', lineHeight: '1.55' },
+    '.cm-content': { caretColor: '#d7e7ff', padding: '8px 0' },
+    '.cm-gutters': { backgroundColor: '#12121b', color: '#454560', border: '0' },
+    '.cm-activeLine': { backgroundColor: 'rgba(255,255,255,.03)' },
+    '.cm-activeLineGutter': { backgroundColor: 'transparent', color: '#8a8aa0' },
+  }, { dark: true })
 
-  editor.addEventListener('input', () => {
-    const t = texts[active]
-    const { start, del, ins } = diff(t.toString(), editor.value)
-    ydoc.transact(() => { if (del) t.delete(start, del); if (ins) t.insert(start, ins) }, LOCAL)
-    scheduleRun()
-    postCursor()
-    renderCursors()
-  })
-
-  // one observer per file: the active file drives the textarea; all files drive the preview
+  // Each view lives in its own pane wrapper: CodeMirror forces
+  // `.cm-editor { display: flex !important }`, so toggling display on the view
+  // element itself can't hide it — we toggle the plain wrapper instead.
+  const views = {}, panes = {}
   FILES.forEach((f) => {
-    texts[f].observe((e) => {
-      if (f === active && e.transaction.origin !== LOCAL) {
-        const a = editor.selectionStart, b = editor.selectionEnd
-        editor.value = texts[f].toString()
-        editor.setSelectionRange(transform(a, e.delta), transform(b, e.delta))
-      }
-      scheduleRun()
-      renderCursors()
+    panes[f] = host.appendChild(Object.assign(document.createElement('div'), { className: 'pane' }))
+    views[f] = new EditorView({
+      parent: panes[f],
+      state: EditorState.create({
+        doc: texts[f].toString(),
+        extensions: [
+          basicSetup,
+          LANG[f],
+          indentUnit.of('  '),
+          EditorState.tabSize.of(2),
+          keymap.of([indentWithTab]),
+          // ⌘/Ctrl+Enter forces a run; beat CM's default newline handling.
+          Prec.highest(keymap.of([
+            { key: 'Mod-Enter', preventDefault: true, run: () => { run(); return true } },
+          ])),
+          oneDark,
+          appTheme,
+          yCollab(texts[f], provider.awareness),
+          // Local edits and applied remote updates both flip docChanged.
+          EditorView.updateListener.of((u) => { if (u.docChanged) scheduleRun() }),
+        ],
+      }),
     })
-  })
-
-  editor.addEventListener('keydown', (e) => {
-    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); run() }
-    else if (e.key === 'Tab') {
-      e.preventDefault()
-      editor.setRangeText('  ', editor.selectionStart, editor.selectionEnd, 'end')
-      editor.dispatchEvent(new Event('input'))
-    }
   })
   $('run').onclick = run
 
@@ -186,11 +208,8 @@ ${js}
   const setActive = (f) => {
     active = f
     tabEls.forEach((b) => b.classList.toggle('active', b.dataset.file === f))
-    editor.value = texts[f].toString()
-    editor.setSelectionRange(0, 0)
-    editor.focus()
-    postCursor()
-    renderCursors()
+    FILES.forEach((x) => { panes[x].style.display = x === f ? '' : 'none' })
+    views[f].focus()
   }
   tabEls.forEach((b) => b.addEventListener('click', () => setActive(b.dataset.file)))
 
@@ -205,7 +224,7 @@ ${js}
   nameInput.value = (me && me.name) || localStorage.getItem(NAME_KEY) || fallbackName
   const publishName = () => {
     const name = nameInput.value.trim().slice(0, 24) || fallbackName
-    provider.awareness.setLocalStateField('user', { name, color: myColor })
+    provider.awareness.setLocalStateField('user', { name, color: myColor, colorLight: myColor + '33' })
   }
   nameInput.addEventListener('input', () => {
     localStorage.setItem(NAME_KEY, nameInput.value.trim().slice(0, 24))
@@ -226,56 +245,12 @@ ${js}
   provider.awareness.on('change', renderPresence)
 
   // ---------- collaborator cursors (toggle in the top bar) ----------
-  // Broadcast our caret through awareness; draw everyone else's over the textarea.
-  // A hidden "mirror" div reproduces the textarea's wrapping to map a char index → x/y.
-  const cursorLayer = $('cursorLayer'), cursorsChk = $('cursors')
-  const mirror = document.createElement('div')
-  mirror.className = 'caret-mirror'
-  cursorLayer.appendChild(mirror)
-  const MIRROR_PROPS = ['paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft',
-    'fontFamily', 'fontSize', 'fontWeight', 'fontStyle', 'fontVariant',
-    'letterSpacing', 'wordSpacing', 'lineHeight', 'textTransform', 'textIndent', 'tabSize']
-  const caretXY = (pos) => {
-    const cs = getComputedStyle(editor)
-    MIRROR_PROPS.forEach((p) => { mirror.style[p] = cs[p] })
-    mirror.style.width = editor.clientWidth + 'px'
-    mirror.textContent = editor.value.slice(0, pos)
-    const marker = document.createElement('span')
-    marker.textContent = editor.value.slice(pos) || '.'
-    mirror.appendChild(marker)
-    const x = marker.offsetLeft - editor.scrollLeft
-    const y = marker.offsetTop - editor.scrollTop
-    mirror.textContent = ''
-    return { x, y, h: parseFloat(cs.lineHeight) || 18 }
-  }
-  const postCursor = () =>
-    provider.awareness.setLocalStateField('cursor', { file: active, pos: editor.selectionEnd })
-  let cursorRaf = 0
-  const renderCursors = () => {
-    if (cursorRaf) return
-    cursorRaf = requestAnimationFrame(() => {
-      cursorRaf = 0
-      cursorLayer.querySelectorAll('.cursor').forEach((n) => n.remove())
-      if (!cursorsChk.checked) return
-      provider.awareness.getStates().forEach((state, id) => {
-        if (id === provider.awareness.clientID) return
-        const c = state.cursor, u = state.user
-        if (!c || !u || c.file !== active) return
-        const { x, y, h } = caretXY(Math.min(c.pos, editor.value.length))
-        const el = document.createElement('div')
-        el.className = 'cursor'
-        el.style.cssText = `transform:translate(${x}px,${y}px);height:${h}px;--c:${u.color}`
-        el.innerHTML = `<span class="cursor-flag">${esc(u.name)}</span>`
-        cursorLayer.appendChild(el)
-      })
-    })
-  }
-  document.addEventListener('selectionchange', () => { if (document.activeElement === editor) postCursor() })
-  editor.addEventListener('focus', postCursor)
-  editor.addEventListener('scroll', renderCursors)
-  window.addEventListener('resize', renderCursors)
-  cursorsChk.addEventListener('change', renderCursors)
-  provider.awareness.on('change', renderCursors)
+  // yCollab renders remote carets/selections from awareness on its own; the
+  // header toggle just shows or hides them via a class on the editor host.
+  const cursorsChk = $('cursors')
+  const applyCursorVis = () => host.classList.toggle('hide-remote-cursors', !cursorsChk.checked)
+  cursorsChk.addEventListener('change', applyCursorVis)
+  applyCursorVis()
 
   // ---------- seed all three panes once per room ----------
   let seeded = false
@@ -288,15 +263,13 @@ ${js}
       texts.css.insert(0, STARTERS.css)
       texts.js.insert(0, STARTERS.js)
     }, LOCAL)
-    editor.value = texts[active].toString()
     run()
   }
   provider.on('synced', seedIfEmpty)
   setTimeout(seedIfEmpty, 1200)
 
-  editor.value = texts[active].toString()
+  setActive(active)
   renderPresence()
-  renderCursors()
   run()
 }
 
@@ -307,7 +280,7 @@ ${js}
 // `me` is the signed-in profile, or null when browsing anonymously.
 let me = null
 async function fetchMe() {
-  if (isLocal) return { id: 'local', name: null }
+  if (isDev) return { id: 'local', name: null }
   try {
     const r = await fetch('/auth/me', { credentials: 'same-origin' })
     if (r.ok) return await r.json()

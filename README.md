@@ -38,13 +38,13 @@ There is no database. Each room lives only as long as someone is connected (see 
 | File | Responsibility |
 |------|----------------|
 | `index.html` | Lobby (create/join room), top bar (room code, copy-invite, editable name, presence, cursor toggle, run controls), editor column with HTML/CSS/JS tabs, and the preview iframe. |
-| `script.js` | All logic (ES module): rooms, Yjs wiring, the textarea↔CRDT bridge, the iframe sketch runner, presence, editable display name, and collaborator cursors. |
-| `style.css` | Dark theme (lobby, auth gate, editor, presence, cursors). |
+| `script.js` | All logic (ES module): rooms, Yjs wiring, the CodeMirror↔CRDT binding (`y-codemirror.next`), the iframe sketch runner, presence, editable display name, and collaborator cursors. |
+| `style.css` | Dark theme (lobby, auth gate, CodeMirror editor, presence, cursors). |
 | `nginx.conf` | The single-origin `web` service: serves the static files and reverse-proxies `/auth/*` + the `/collab` ws to the `collab` service. |
 | `Dockerfile.nginx` | Builds the `web` service (nginx + `nginx.conf`); build context is the repo root. |
 | `Dockerfile` / `disco.json` | Legacy `generator` service (unused under the single-origin root `disco.json`; kept for reference). |
 
-Dependencies (yjs, y-websocket, p5) load from CDNs at runtime — there is **no `node_modules` and no build step**.
+Dependencies (yjs, y-websocket, CodeMirror 6, y-codemirror.next, p5) load from CDNs (esm.sh / jsDelivr) at runtime — there is **no `node_modules` and no build step**.
 
 ### `collab-server/` — sync + auth server (Node)
 
@@ -102,14 +102,14 @@ python3 -m http.server 42421     # or: npx http-server -p 42421
 Open <http://localhost:42421>.
 
 `SERVER` near the top of `script.js` is auto-detected and needs **no editing**:
-on `localhost` / `127.0.0.1` it connects straight to `ws://<host>:42420`; served
-from any other host over https it uses the same-origin `wss://<host>/collab`
+any plain-**http** page (localhost, `127.0.0.1`, or a LAN IP) connects straight to
+`ws://<host>:42420`; an **https** page uses the same-origin `wss://<host>/collab`
 (the nginx path in [Deployment](#deployment-disco)). The frontend also skips the
-login gate on `localhost`, matching the server's `AUTH_DEV` bypass.
+login gate on http, matching the server's `AUTH_DEV` bypass.
 
 **Test multiuser:** open the page in two windows, create a room in one, copy the invite link into the other. Typing in one updates the sketch and code in the other; you'll see two presence chips. In DevTools → Network → WS, the connection to `:42420` should sit at status **101**.
 
-**Test on another device (same LAN):** replace `localhost` with your laptop's LAN IP in both the URL and `SERVER`. `ws://` still works because the page stays on http, and both servers already bind all interfaces.
+**Test on another device (same LAN):** just open `http://<laptop-LAN-IP>:42421` on the other device — no edits needed. `SERVER` auto-detects the LAN IP from the page URL and connects to `ws://<laptop-LAN-IP>:42420`; `ws://` works because the page stays on http, and both servers already bind all interfaces. (Make sure your laptop firewall allows inbound `42420`/`42421`.)
 
 ---
 
@@ -235,9 +235,8 @@ authenticated sync.
 
 Non-obvious invariants worth preserving:
 
-- **`LOCAL` origin tag.** Every local edit is applied inside `ydoc.transact(..., LOCAL)`. Observers ignore changes whose `transaction.origin === LOCAL` when updating the textarea, which is what prevents an echo loop (apply remote → fire observer → re-apply → ...).
-- **Cursor transform.** Remote edits map the local caret through the Yjs delta (`transform()`) so your cursor doesn't jump when a teammate edits text above you.
-- **One Y.Text per pane.** `html`, `css`, `js` are separate `Y.Text`s in one `Y.Doc`. The *active* pane drives the textarea; *all three* trigger a preview re-run, so editing CSS updates the canvas even while someone else is in the JS tab.
+- **Single module instances (no `?deps=`).** `@codemirror/state`, `@codemirror/view` and `yjs` must each resolve to ONE instance across every esm.sh import, or CodeMirror throws "multiple instances of @codemirror/state" and `y-codemirror.next` silently stops observing the `Y.Text`. We rely on esm.sh deduping by canonical URL — adding `?deps=` forces variant builds on hashed paths that break that dedup. Leave the imports plain.
+- **One `EditorView` per pane, wrapped in a `.pane` div.** `html`, `css`, `js` are separate `Y.Text`s in one `Y.Doc`, each bound to its own view via `yCollab`. Tab switching toggles the *wrapper's* `display` — not the view's, because CodeMirror forces `.cm-editor { display: flex !important }`. All three views push edits into their `Y.Text`, so any pane's change triggers a preview re-run even when it isn't the active tab. `yCollab` owns sync and remote-cursor rendering (a remote caret is a `Y.RelativePosition` scoped to one `Y.Text`, so cursors stay per-file automatically).
 - **Preview isolation.** The sketch runs in a sandboxed iframe rebuilt via `srcdoc` on each change. User code in each pane is escaped against its own closing tag (`</script>`, `</style>`) so it can't break out of the composed document.
 - **p5 is pinned to `p5@1`** (jsDelivr). p5 2.0 has breaking changes; the starter sketch and most tutorials (e.g. Nature of Code) target 1.x.
 - **Seeding.** The first client into an empty room seeds the three starter panes once; everyone else syncs to the existing doc. Guard with the emptiness check before adding more seed logic.
@@ -253,11 +252,10 @@ Rooms are in-memory. When the last client disconnects, `closeConn()` in `server.
 ## Possible next steps
 
 - **Per-pane presence** — add the active pane to awareness state and show it on each presence chip, so the mob can see who's looking at which file.
-- **CodeMirror 6** (`y-codemirror.next`) in place of the textarea — syntax highlighting plus live remote cursors/selections.
 - **`y-leveldb` persistence** — a returnable gallery of saved sketches.
 
 ---
 
 ## Tech stack
 
-p5.js · Yjs (CRDT) · y-websocket / y-protocols · `ws` · Disco (Docker Swarm + Caddy) · vanilla JS, no framework, no bundler.
+p5.js · CodeMirror 6 · Yjs (CRDT) · y-codemirror.next · y-websocket / y-protocols · `ws` · Disco (Docker Swarm + Caddy) · vanilla JS, no framework, no bundler.

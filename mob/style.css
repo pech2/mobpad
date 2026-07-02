@@ -58,26 +58,28 @@ main { flex: 1; display: grid; grid-template-columns: 1fr 1fr; min-height: 0; }
 .tab.active { color: #d7e7ff; border-bottom-color: #2b6cff; }
 
 .editor-wrap { position: relative; flex: 1; min-height: 0; }
-#editor {
-  position: absolute; inset: 0; width: 100%; height: 100%;
-  border: 0; resize: none; outline: none;
-  background: #12121b; color: #d7e7ff; padding: 14px;
-  font: 13px/1.55 ui-monospace, "SF Mono", Menlo, monospace; tab-size: 2;
-}
+.pane { height: 100%; }
+.cm-editor { height: 100%; background: #12121b; }
 #stage { border: 0; width: 100%; height: 100%; background: #0f0f19; }
 
-/* ---------- collaborator cursors (overlay over the textarea) ---------- */
-.cursors { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
-.caret-mirror {
-  position: absolute; top: 0; left: 0; box-sizing: border-box; border: 0;
-  visibility: hidden; overflow: hidden; white-space: pre-wrap; word-wrap: break-word;
+/* ---------- collaborator cursors (rendered by y-codemirror.next) ---------- */
+/* yCollab colors the caret/selection inline from each peer's awareness color;
+   these rules shape the caret bar and the always-on name flag above it. */
+.cm-ySelectionCaret {
+  position: relative; box-sizing: border-box;
+  border-left: 2px solid; border-right: 2px solid;
+  margin-left: -1px; margin-right: -1px;
 }
-.cursor { position: absolute; top: 0; left: 0; width: 2px; background: var(--c); }
-.cursor-flag {
-  position: absolute; top: -1.4em; left: -1px; padding: 0 4px;
-  border-radius: 4px 4px 4px 0; white-space: nowrap; font-weight: 600;
-  font: 11px/1.4 ui-monospace, monospace; color: #0f0f19; background: var(--c);
+.cm-ySelectionCaretDot { display: none; }
+.cm-ySelectionInfo {
+  position: absolute; top: -1.45em; left: -2px;
+  padding: 0 4px; border-radius: 4px 4px 4px 0; white-space: nowrap;
+  font: 600 11px/1.4 ui-monospace, monospace; color: #0f0f19;
+  opacity: 1; transition: none;
 }
+.hide-remote-cursors .cm-ySelection,
+.hide-remote-cursors .cm-ySelectionCaret,
+.hide-remote-cursors .cm-ySelectionInfo { display: none; }
 
 @media (max-width: 720px) {
   main { grid-template-columns: 1fr; grid-template-rows: 1fr 1fr; }
