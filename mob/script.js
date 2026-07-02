@@ -320,14 +320,21 @@ const goLogin = () => {
   location.href = '/auth/login?redirect=' + encodeURIComponent(location.href)
 }
 
+// Clear the session cookie, then reload so sync drops back to solo editing.
+const goLogout = async () => {
+  try { await fetch('/auth/logout', { method: 'POST', credentials: 'same-origin' }) } catch {}
+  location.reload()
+}
+
 // Reflect sign-in state on the lobby login button.
 function renderAuthStatus() {
   const btn = $('login'), note = $('authnote')
   if (me && me.name) {
-    btn.textContent = 'Signed in as ' + me.name
-    btn.disabled = true
-    btn.onclick = null
-    note.innerHTML = 'You’re signed in — rooms sync with your mob.'
+    btn.textContent = 'Sign out'
+    btn.disabled = false
+    btn.onclick = goLogout
+    note.textContent = ''
+    note.append('Signed in as ', Object.assign(document.createElement('strong'), { textContent: me.name }), ' — rooms sync with your mob.')
   } else {
     btn.textContent = 'Log in with Recurse'
     btn.disabled = false
