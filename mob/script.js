@@ -90,12 +90,15 @@ function start(room) {
   // Fallback instead of the line above:
   // const provider = new WebrtcProvider(APP_PREFIX + room, ydoc)
 
-  // The ws gate closes unauthenticated sockets with code 4401. Reloading re-runs
-  // the auth gate above, which now sees a 401 and shows the login screen.
+  // The ws gate closes unauthenticated sockets with code 4401. You can still edit
+  // the room solo (the Yjs doc is local); syncing with others needs a Recurse login.
+  // Stop retrying and surface a "Log in to sync" button in the header.
   provider.on('connection-close', (event) => {
     if (event && event.code === 4401) {
       provider.disconnect()
-      location.reload()
+      const btn = $('syncLogin')
+      btn.style.display = ''
+      btn.onclick = goLogin
     }
   })
 
@@ -297,12 +300,13 @@ ${js}
   run()
 }
 
-// ---------- auth gate ----------
-// Prod requires a Recurse Center session (an HttpOnly cookie set by /auth/callback).
-// Local dev connects straight to the node server (run with AUTH_DEV=1), so we skip
-// the gate there and treat the user as signed in.
+// ---------- auth (optional) ----------
+// The app is usable without logging in: you can create/join a room and edit solo.
+// Real-time SYNC needs a Recurse Center session (an HttpOnly cookie set by
+// /auth/callback) — the ws gate rejects unauthenticated sockets with code 4401.
+// `me` is the signed-in profile, or null when browsing anonymously.
 let me = null
-async function requireAuth() {
+async function fetchMe() {
   if (isLocal) return { id: 'local', name: null }
   try {
     const r = await fetch('/auth/me', { credentials: 'same-origin' })
@@ -311,19 +315,33 @@ async function requireAuth() {
   return null
 }
 
+// Kick off the Recurse OAuth flow, returning here (same room) afterwards.
+const goLogin = () => {
+  location.href = '/auth/login?redirect=' + encodeURIComponent(location.href)
+}
+
+// Reflect sign-in state on the lobby login button.
+function renderAuthStatus() {
+  const btn = $('login'), note = $('authnote')
+  if (me && me.name) {
+    btn.textContent = 'Signed in as ' + me.name
+    btn.disabled = true
+    btn.onclick = null
+    note.innerHTML = 'You’re signed in — rooms sync with your mob.'
+  } else {
+    btn.textContent = 'Log in with Recurse'
+    btn.disabled = false
+    btn.onclick = goLogin
+  }
+}
+
 function boot() {
+  renderAuthStatus()
   const initial = readRoom()
   if (initial) { lobby.style.display = 'none'; start(initial) }
 }
 
 ;(async () => {
-  me = await requireAuth()
-  if (!me) {
-    $('authgate').style.display = ''
-    $('login').onclick = () => {
-      location.href = '/auth/login?redirect=' + encodeURIComponent(location.href)
-    }
-    return
-  }
+  me = await fetchMe()
   boot()
 })()

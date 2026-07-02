@@ -7,14 +7,6 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <div id="authgate" style="display:none">
-    <div class="card">
-      <h1>mobpad</h1>
-      <p>Sign in with your Recurse Center account to join a room.</p>
-      <button id="login" class="primary">Log in with Recurse</button>
-    </div>
-  </div>
-
   <div id="lobby">
     <div class="card">
       <h1>mobpad</h1>
@@ -25,6 +17,10 @@
         <input id="roomInput" placeholder="room code, e.g. coral-otter-318" autocomplete="off" spellcheck="false">
         <button id="join">Join</button>
       </div>
+      <div class="authrow">
+        <span id="authnote">Editing is open — <strong>log in with Recurse to sync</strong> with your mob.</span>
+        <button id="login">Log in with Recurse</button>
+      </div>
     </div>
   </div>
 
@@ -32,6 +28,7 @@
     <strong>mobpad</strong>
     <span id="room" class="room"></span>
     <button id="copy">Copy invite</button>
+    <button id="syncLogin" class="synclogin" style="display:none">Log in to sync</button>
     <span id="count">…</span>
     <input id="nameInput" class="name" placeholder="your name" maxlength="24" spellcheck="false" autocomplete="off" title="Your display name">
     <span id="presence"></span>
