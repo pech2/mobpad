@@ -1,4 +1,4 @@
-import * as Y from 'https://esm.sh/yjs@13.6.31'
+import * as Y from 'https://esm.sh/yjs@13'
 import { WebsocketProvider } from 'https://esm.sh/y-websocket@3'
 // Fallback (no server, open 2 tabs): uncomment this and the provider line inside start().
 // import { WebrtcProvider } from 'https://esm.sh/y-webrtc@10'
@@ -8,13 +8,23 @@ import { WebsocketProvider } from 'https://esm.sh/y-websocket@3'
 //
 // @codemirror/state, @codemirror/view and yjs MUST each resolve to ONE module
 // instance across every package, or CodeMirror throws "multiple instances of
-// @codemirror/state" and yCollab silently fails to observe our Y.Text. We rely
-// on esm.sh deduping by canonical URL: leaving the versions to resolve naturally
-// makes every package share the same deep module. (Do NOT add ?deps= here — that
-// forces variant builds on hashed paths that no longer match those canonical
-// URLs, which reintroduces the duplicate-instance bug.)
-import { EditorView, keymap } from 'https://esm.sh/@codemirror/view@6.43.4'
-import { EditorState, Prec } from 'https://esm.sh/@codemirror/state@6.7.0'
+// @codemirror/state" and yCollab silently fails to observe our Y.Text (empty
+// editors AND no sync). esm.sh dedupes by canonical URL, and EVERY transitive
+// import here is a caret range (basicSetup/yCollab pull @codemirror/state@^6.0.0,
+// y-codemirror.next pulls yjs@^13.5.6) that esm.sh resolves to today's latest
+// patch. So our OWN imports of those instance-critical packages must float to the
+// same latest patch — pin to a caret-major (@6, @13), NEVER an exact patch. An
+// exact pin (e.g. @6.7.0) is correct the day it is written but silently splits
+// into a second instance the moment CodeMirror ships 6.7.1: the ^6.0.0 deps roll
+// forward and ours don't. (Also do NOT add ?deps= — it forces variant builds on
+// hashed paths that break the canonical dedupe.)
+import { EditorView, keymap } from 'https://esm.sh/@codemirror/view@6'
+import { EditorState, Prec } from 'https://esm.sh/@codemirror/state@6'
+// The `codemirror` umbrella (just for basicSetup) is the exception: it is NOT
+// instance-critical (it only re-bundles extensions and pulls state/view via
+// ^6.0.0, so it shares the single instance above), and it must stay pinned —
+// @6 resolves to a stray 6.65.7 in the registry that has no basicSetup export,
+// while the real CM6 umbrella tops out at 6.0.2 (its npm `latest`).
 import { basicSetup } from 'https://esm.sh/codemirror@6.0.2'
 import { indentUnit } from 'https://esm.sh/@codemirror/language@6'
 import { indentWithTab } from 'https://esm.sh/@codemirror/commands@6'
